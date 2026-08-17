@@ -1,0 +1,596 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local VirtualUser = game:GetService("VirtualUser")
+local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local LocalPlayer = Players.LocalPlayer
+
+local Rayfield = loadstring(game:HttpGet("https://sirius.menu/gen2"))()
+local Window = Rayfield:CreateWindow({
+    name = "Prison Life",
+    subtitle = "AnTHuB | V1.0",
+    theme = "frost",
+    icon = 93364949241311,
+})
+
+local function notify(title, content, duration, icon)
+    pcall(function()
+        Window:Notify({
+            title = title,
+            content = content,
+            duration = duration or 3,
+            icon = icon or 125626312718314,
+        })
+    end)
+end
+
+local function getParent()
+    if gethui then
+        local ok, gui = pcall(gethui)
+        if ok and gui then return gui end
+    end
+    local ok, core = pcall(function() return game:GetService("CoreGui") end)
+    if ok and core then return core end
+    return LocalPlayer:WaitForChild("PlayerGui")
+end
+
+local function characterParts(player)
+    local character = player and player.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    local head = character and character:FindFirstChild("Head")
+    return character, humanoid, root, head
+end
+
+local function localRoot()
+    local _, _, root = characterParts(LocalPlayer)
+    return root
+end
+
+local function cleanName(value)
+    return string.lower(tostring(value or ""))
+end
+
+local function findNamedPart(terms)
+    for _, object in ipairs(Workspace:GetDescendants()) do
+        if object:IsA("BasePart") or object:IsA("Model") then
+            local name = cleanName(object.Name)
+            for _, term in ipairs(terms) do
+                if name:find(cleanName(term), 1, true) then
+                    if object:IsA("BasePart") then return object end
+                    return object.PrimaryPart or object:FindFirstChildWhichIsA("BasePart", true)
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function findRemote(terms)
+    local roots = { Workspace, ReplicatedStorage }
+    for _, root in ipairs(roots) do
+        for _, object in ipairs(root:GetDescendants()) do
+            if object:IsA("RemoteEvent") or object:IsA("RemoteFunction") then
+                local name = cleanName(object.Name)
+                for _, term in ipairs(terms) do
+                    if name:find(cleanName(term), 1, true) then
+                        return object
+                    end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function invokeRemote(remote, ...)
+    if not remote then return false end
+    local args = { ... }
+    local ok = pcall(function()
+        if remote:IsA("RemoteFunction") then
+            remote:InvokeServer(table.unpack(args))
+        else
+            remote:FireServer(table.unpack(args))
+        end
+    end)
+    return ok
+end
+
+local function teleportTo(cframe, label)
+    local root = localRoot()
+    if not root then
+        notify("Teleport", "Your character is not ready.", 3, 91452555903853)
+        return
+    end
+    if not cframe then
+        notify("Teleport", label .. " was not found in this map.", 4, 91452555903853)
+        return
+    end
+    pcall(function()
+        root.CFrame = cframe + Vector3.new(0, 3, 0)
+    end)
+    notify("Teleport", "Moved to " .. label .. ".", 2, 125626312718314)
+end
+
+local function teleportToNamed(label, terms)
+    local part = findNamedPart(terms)
+    teleportTo(part and part.CFrame or nil, label)
+end
+
+local function teleportToCriminalCar()
+    local chosen
+    for _, object in ipairs(Workspace:GetDescendants()) do
+        if object:IsA("VehicleSeat") or object:IsA("Seat") then
+            local path = cleanName(object:GetFullName())
+            if path:find("car", 1, true) or path:find("vehicle", 1, true)
+                or path:find("van", 1, true) then
+                chosen = object
+                break
+            end
+        end
+    end
+    if not chosen then
+        for _, object in ipairs(Workspace:GetDescendants()) do
+            if object:IsA("VehicleSeat") then
+                chosen = object
+                break
+            end
+        end
+    end
+    teleportTo(chosen and chosen.CFrame or nil, "a criminal car")
+end
+
+local selectedPlayerName
+local function playerOptions()
+    local options = {}
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            table.insert(options, player.Name)
+        end
+    end
+    table.sort(options)
+    return options
+end
+
+local playerTab = Window:CreateTab({ name = "Players", icon = 111263549366178 })
+local teleportTab = Window:CreateTab({ name = "Teleports", icon = 80387863064905 })
+local espTab = Window:CreateTab({ name = "ESP", icon = 100604009889706 })
+local movementTab = Window:CreateTab({ name = "Movement", icon = 125626312718314 })
+local infoTab = Window:CreateTab({ name = "Info", icon = 129180860773723 })
+
+local targetDropdown = playerTab:CreateDropdown({
+    name = "Target",
+    options = playerOptions(),
+    value = nil,
+    callback = function(value)
+        selectedPlayerName = type(value) == "table" and value[1] or value
+    end,
+})
+
+local function refreshPlayers()
+    local options = playerOptions()
+    pcall(function() targetDropdown:Refresh(options, false) end)
+    if selectedPlayerName and not Players:FindFirstChild(selectedPlayerName) then
+        selectedPlayerName = nil
+    end
+    notify("Players", "Player list refreshed.", 2, 100604009889706)
+end
+
+local function selectedPlayer()
+    return selectedPlayerName and Players:FindFirstChild(selectedPlayerName) or nil
+end
+
+playerTab:CreateButton({
+    name = "Refresh player list",
+    icon = 100604009889706,
+    callback = refreshPlayers,
+})
+
+playerTab:CreateButton({
+    name = "Fling selected",
+    icon = 129180860773723,
+    callback = function()
+        local target = selectedPlayer()
+        local _, _, targetRoot = characterParts(target)
+        local root = localRoot()
+        if not targetRoot or not root then
+            notify("Fling", "Select a player with a loaded character.", 3, 91452555903853)
+            return
+        end
+        pcall(function()
+            root.CFrame = targetRoot.CFrame * CFrame.new(0, 0, 1)
+            root.AssemblyAngularVelocity = Vector3.new(0, 90000, 0)
+            root.AssemblyLinearVelocity = Vector3.new(9000, 9000, 9000)
+        end)
+        task.delay(0.35, function()
+            local currentRoot = localRoot()
+            if currentRoot then
+                pcall(function()
+                    currentRoot.AssemblyAngularVelocity = Vector3.zero
+                    currentRoot.AssemblyLinearVelocity = Vector3.zero
+                end)
+            end
+        end)
+    end,
+})
+
+playerTab:CreateButton({
+    name = "Arrest selected",
+    icon = 125626312718314,
+    callback = function()
+        local target = selectedPlayer()
+        local _, _, _, head = characterParts(target)
+        local remote = findRemote({ "arrest" })
+        if not target or not head or not remote then
+            notify("Arrest", "Arrest remote or target was not found.", 3, 91452555903853)
+            return
+        end
+        notify("Arrest", "Request sent.", 2, 125626312718314)
+        invokeRemote(remote, head)
+    end,
+})
+
+playerTab:CreateButton({
+    name = "Arrest all",
+    icon = 125626312718314,
+    callback = function()
+        local remote = findRemote({ "arrest" })
+        if not remote then
+            notify("Arrest", "Arrest remote was not found.", 3, 91452555903853)
+            return
+        end
+        local count = 0
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer then
+                local _, _, _, head = characterParts(player)
+                if head and invokeRemote(remote, head) then
+                    count = count + 1
+                    task.wait(0.08)
+                end
+            end
+        end
+        notify("Arrest", "Requests sent: " .. tostring(count) .. ".", 3, 125626312718314)
+    end,
+})
+
+local espEnabled = false
+local espBox = true
+local espHealth = true
+local espDistance = true
+local espTracer = true
+local espNames = true
+local espTeamCheck = false
+local espObjects = {}
+local espGui = Instance.new("ScreenGui")
+espGui.Name = "PrisonLifeESP"
+espGui.IgnoreGuiInset = true
+espGui.ResetOnSpawn = false
+espGui.Enabled = false
+espGui.Parent = getParent()
+
+local function textLabel(parent, size, color, align)
+    local label = Instance.new("TextLabel")
+    label.Size = size
+    label.BackgroundTransparency = 1
+    label.TextColor3 = color
+    label.Font = Enum.Font.GothamBold
+    label.TextSize = 12
+    label.TextStrokeTransparency = 0.5
+    label.TextXAlignment = align or Enum.TextXAlignment.Center
+    label.Parent = parent
+    return label
+end
+
+local function createESP(player)
+    if espObjects[player] then return espObjects[player] end
+    local box = Instance.new("Frame")
+    box.BackgroundTransparency = 1
+    box.BorderSizePixel = 0
+    box.Visible = false
+    box.Parent = espGui
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.fromRGB(255, 90, 90)
+    stroke.Thickness = 1
+    stroke.Parent = box
+
+    local healthBack = Instance.new("Frame")
+    healthBack.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    healthBack.BorderSizePixel = 0
+    healthBack.Visible = false
+    healthBack.Parent = espGui
+    local healthFill = Instance.new("Frame")
+    healthFill.BackgroundColor3 = Color3.fromRGB(70, 220, 100)
+    healthFill.BorderSizePixel = 0
+    healthFill.AnchorPoint = Vector2.new(0, 1)
+    healthFill.Position = UDim2.new(0, 0, 1, 0)
+    healthFill.Parent = healthBack
+
+    local name = textLabel(espGui, UDim2.fromOffset(220, 18), Color3.fromRGB(255, 255, 255))
+    name.Visible = false
+    local distance = textLabel(espGui, UDim2.fromOffset(180, 18), Color3.fromRGB(215, 215, 215))
+    distance.Visible = false
+
+    local tracer = Instance.new("Frame")
+    tracer.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    tracer.BorderSizePixel = 0
+    tracer.AnchorPoint = Vector2.new(0.5, 0)
+    tracer.Visible = false
+    tracer.Parent = espGui
+
+    local entry = {
+        box = box,
+        healthBack = healthBack,
+        healthFill = healthFill,
+        name = name,
+        distance = distance,
+        tracer = tracer,
+    }
+    espObjects[player] = entry
+    return entry
+end
+
+local function hideESP(entry)
+    for _, object in pairs(entry) do
+        if typeof(object) == "Instance" then object.Visible = false end
+    end
+end
+
+local function removeESP(player)
+    local entry = espObjects[player]
+    if not entry then return end
+    for _, object in pairs(entry) do
+        if typeof(object) == "Instance" then object:Destroy() end
+    end
+    espObjects[player] = nil
+end
+
+local function getBox2D(character)
+    local cf, size = character:GetBoundingBox()
+    local half = size * 0.5
+    local minX, minY = math.huge, math.huge
+    local maxX, maxY = -math.huge, -math.huge
+    local visible = false
+    for x = -1, 1, 2 do
+        for y = -1, 1, 2 do
+            for z = -1, 1, 2 do
+                local point = cf * Vector3.new(half.X * x, half.Y * y, half.Z * z)
+                local screen, onScreen = Workspace.CurrentCamera:WorldToViewportPoint(point)
+                if screen.Z > 0 then
+                    visible = visible or onScreen
+                    minX = math.min(minX, screen.X)
+                    minY = math.min(minY, screen.Y)
+                    maxX = math.max(maxX, screen.X)
+                    maxY = math.max(maxY, screen.Y)
+                end
+            end
+        end
+    end
+    if not visible or minX == math.huge then return nil end
+    return minX, minY, maxX - minX, maxY - minY
+end
+
+local function updateESP(player, entry)
+    local character, humanoid, root = characterParts(player)
+    if not character or not humanoid or not root or humanoid.Health <= 0 then
+        hideESP(entry)
+        return
+    end
+    if espTeamCheck and player.Team and LocalPlayer.Team and player.Team == LocalPlayer.Team then
+        hideESP(entry)
+        return
+    end
+    local x, y, width, height = getBox2D(character)
+    if not x then
+        hideESP(entry)
+        return
+    end
+    local camera = Workspace.CurrentCamera
+    local viewport = camera.ViewportSize
+    local centerX = x + width * 0.5
+    local bottomY = y + height
+    local distance = math.floor((root.Position - camera.CFrame.Position).Magnitude)
+    local ratio = math.clamp(humanoid.Health / math.max(humanoid.MaxHealth, 1), 0, 1)
+
+    entry.box.Position = UDim2.fromOffset(x, y)
+    entry.box.Size = UDim2.fromOffset(width, height)
+    entry.box.Visible = espEnabled and espBox
+
+    entry.healthBack.Position = UDim2.fromOffset(x - 6, y)
+    entry.healthBack.Size = UDim2.fromOffset(3, height)
+    entry.healthBack.Visible = espEnabled and espHealth
+    entry.healthFill.Size = UDim2.new(1, 0, ratio, 0)
+    entry.healthFill.BackgroundColor3 = Color3.fromRGB(255 - math.floor(185 * ratio), 70 + math.floor(160 * ratio), 75)
+
+    entry.name.Position = UDim2.fromOffset(centerX - 110, y - 20)
+    entry.name.Text = player.DisplayName
+    entry.name.Visible = espEnabled and espNames
+
+    entry.distance.Position = UDim2.fromOffset(centerX - 90, bottomY + 2)
+    entry.distance.Text = tostring(distance) .. " studs"
+    entry.distance.Visible = espEnabled and espDistance
+
+    local startX, startY = viewport.X * 0.5, viewport.Y
+    local deltaX, deltaY = centerX - startX, bottomY - startY
+    local length = math.sqrt(deltaX * deltaX + deltaY * deltaY)
+    entry.tracer.Position = UDim2.fromOffset(startX, startY)
+    entry.tracer.Size = UDim2.fromOffset(2, length)
+    entry.tracer.Rotation = math.deg(math.atan2(deltaY, deltaX)) + 90
+    entry.tracer.Visible = espEnabled and espTracer
+end
+
+for _, player in ipairs(Players:GetPlayers()) do
+    if player ~= LocalPlayer then createESP(player) end
+end
+
+local playerAddedConnection = Players.PlayerAdded:Connect(function(player)
+    createESP(player)
+end)
+local playerRemovingConnection = Players.PlayerRemoving:Connect(removeESP)
+local espConnection = RunService.RenderStepped:Connect(function()
+    if not espEnabled then return end
+    for player, entry in pairs(espObjects) do
+        updateESP(player, entry)
+    end
+end)
+
+espTab:CreateToggle({ name = "ESP", value = false, callback = function(value)
+    espEnabled = value
+    espGui.Enabled = value
+    if not value then
+        for _, entry in pairs(espObjects) do hideESP(entry) end
+    end
+end })
+espTab:CreateToggle({ name = "Box", value = true, callback = function(value) espBox = value end })
+espTab:CreateToggle({ name = "Health", value = true, callback = function(value) espHealth = value end })
+espTab:CreateToggle({ name = "Distance", value = true, callback = function(value) espDistance = value end })
+espTab:CreateToggle({ name = "Tracer", value = true, callback = function(value) espTracer = value end })
+espTab:CreateToggle({ name = "Names", value = true, callback = function(value) espNames = value end })
+espTab:CreateToggle({ name = "Team check", value = false, callback = function(value) espTeamCheck = value end })
+
+local speedEnabled = false
+local jumpEnabled = false
+local speedValue = 16
+local jumpValue = 50
+local noclipEnabled = false
+local movementConnection
+local noclipConnection
+
+local function applyMovement()
+    local _, humanoid = characterParts(LocalPlayer)
+    if not humanoid then return end
+    pcall(function()
+        humanoid.WalkSpeed = speedEnabled and speedValue or 16
+        humanoid.UseJumpPower = true
+        humanoid.JumpPower = jumpEnabled and jumpValue or 50
+    end)
+end
+
+movementConnection = RunService.Heartbeat:Connect(function()
+    if speedEnabled or jumpEnabled then applyMovement() end
+    if noclipEnabled then
+        local character = LocalPlayer.Character
+        if character then
+            for _, object in ipairs(character:GetDescendants()) do
+                if object:IsA("BasePart") then object.CanCollide = false end
+            end
+        end
+    end
+end)
+
+movementTab:CreateSlider({ name = "WalkSpeed", range = { 16, 250 }, increment = 1, value = 16, suffix = "", callback = function(value)
+    speedValue = value
+    applyMovement()
+end })
+movementTab:CreateToggle({ name = "Enable WalkSpeed", value = false, callback = function(value)
+    speedEnabled = value
+    applyMovement()
+end })
+movementTab:CreateSlider({ name = "JumpPower", range = { 50, 200 }, increment = 5, value = 50, suffix = "", callback = function(value)
+    jumpValue = value
+    applyMovement()
+end })
+movementTab:CreateToggle({ name = "Enable JumpPower", value = false, callback = function(value)
+    jumpEnabled = value
+    applyMovement()
+end })
+movementTab:CreateToggle({ name = "NoClip", value = false, callback = function(value)
+    noclipEnabled = value
+    if not value and LocalPlayer.Character then
+        for _, object in ipairs(LocalPlayer.Character:GetDescendants()) do
+            if object:IsA("BasePart") then object.CanCollide = true end
+        end
+    end
+end })
+
+local locations = {
+    { "Cafeteria", { "cafeteria", "cafe" } },
+    { "Criminal base", { "criminal base", "criminalbase", "criminal" } },
+    { "Outside prison", { "outside", "yard", "escape" } },
+    { "Inside prison", { "inside prison", "prison interior", "prison" } },
+    { "Police armory", { "armory", "gunroom", "gun room", "weapons" } },
+}
+for _, location in ipairs(locations) do
+    teleportTab:CreateButton({
+        name = location[1],
+        icon = 80387863064905,
+        callback = function()
+            teleportToNamed(location[1], location[2])
+        end,
+    })
+end
+teleportTab:CreateButton({
+    name = "Criminal cars",
+    icon = 80387863064905,
+    callback = teleportToCriminalCar,
+})
+
+teleportTab:CreateButton({
+    name = "Get police card",
+    icon = 125626312718314,
+    callback = function()
+        local remote = findRemote({ "itemhandler", "policecard", "keycard", "card" })
+        if not remote then
+            notify("Police card", "Item remote was not found.", 4, 91452555903853)
+            return
+        end
+        local requests = {
+            { "request", "PoliceCard" },
+            { "request", "KeyCard" },
+            { "request", "Key card" },
+            { "request", "Police ID" },
+        }
+        for _, requestArgs in ipairs(requests) do
+            invokeRemote(remote, table.unpack(requestArgs))
+            task.wait(0.08)
+        end
+        notify("Police card", "Request sent.", 3, 125626312718314)
+    end,
+})
+
+local antiAfkConnection = LocalPlayer.Idled:Connect(function()
+    pcall(function()
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new())
+    end)
+end)
+
+local creatorUserId = 0
+pcall(function() creatorUserId = Players:GetUserIdFromNameAsync("6r0lw") end)
+local creatorAvatar = 125626312718314
+if creatorUserId > 0 then
+    creatorAvatar = "rbxthumb://type=AvatarHeadShot&id=" .. tostring(creatorUserId) .. "&w=150&h=150"
+end
+
+infoTab:CreateButton({
+    name = "Prison Life V1.0",
+    icon = 93364949241311,
+    callback = function() notify("Version", "Prison Life V1.0", 3, 93364949241311) end,
+})
+infoTab:CreateButton({
+    name = "Next update: V1.1",
+    icon = 100604009889706,
+    callback = function() notify("Next update", "More locations and improvements.", 4, 100604009889706) end,
+})
+infoTab:CreateButton({
+    name = "Made by akiev / yoaredevs",
+    icon = creatorAvatar,
+    callback = function() notify("Creator", "Roblox user: 6r0lw", 4, creatorAvatar) end,
+})
+infoTab:CreateButton({
+    name = "Unload hub",
+    icon = 91452555903853,
+    callback = function()
+        espEnabled = false
+        espGui.Enabled = false
+        if espConnection then espConnection:Disconnect() end
+        if playerAddedConnection then playerAddedConnection:Disconnect() end
+        if playerRemovingConnection then playerRemovingConnection:Disconnect() end
+        if movementConnection then movementConnection:Disconnect() end
+        if antiAfkConnection then antiAfkConnection:Disconnect() end
+        for player in pairs(espObjects) do removeESP(player) end
+        pcall(function() Window:Unload() end)
+    end,
+})
+
+notify("Prison Life", "Ready.", 3, 125626312718314)
